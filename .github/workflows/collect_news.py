@@ -2,11 +2,8 @@
 import os
 import requests
 from datetime import datetime, timedelta
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from anthropic import Anthropic
 import json
+from anthropic import Anthropic
 from bs4 import BeautifulSoup
 
 class RealEstateNewsCollector:
@@ -78,38 +75,44 @@ class RealEstateNewsCollector:
             print(f"Claude API error: {e}")
             return f"뉴스 분석 중 오류가 발생했습니다: {e}"
     
-    def send_email(self, content):
-        """이메일로 결과 전송"""
+    def send_slack_notification(self, content):
+        """Slack으로 결과 전송"""
+        webhook_url = os.getenv('SLACK_WEBHOOK_URL')
+        
+        if not webhook_url:
+            print("SLACK_WEBHOOK_URL이 설정되지 않았습니다!")
+            return
+        
+        # Slack 메시지 형식
+        slack_data = {
+            "text": f"📊 일일 부동산 뉴스 브리핑 - {self.today}",
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*📊 {self.today} 부동산 뉴스 브리핑*"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": content[:3000] + ("..." if len(content) > 3000 else "")
+                    }
+                }
+            ]
+        }
+        
         try:
-            msg = MIMEMultipart()
-            msg['From'] = os.getenv('GMAIL_USERNAME')
-            msg['To'] = os.getenv('RECIPIENT_EMAIL')
-            msg['Subject'] = f"📊 일일 부동산 뉴스 브리핑 - {self.today}"
-            
-            body = f"""
-안녕하세요!
-
-{self.today} 부동산 뉴스 브리핑을 전달드립니다.
-
-{content}
-
----
-자동 생성된 뉴스 브리핑입니다.
-문의사항이 있으시면 회신해주세요.
-            """
-            
-            msg.attach(MIMEText(body, 'plain', 'utf-8'))
-            
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
-            server.login(os.getenv('GMAIL_USERNAME'), os.getenv('GMAIL_APP_PASSWORD'))
-            server.send_message(msg)
-            server.quit()
-            
-            print("이메일 전송 완료!")
-            
+            response = requests.post(webhook_url, json=slack_data)
+            if response.status_code == 200:
+                print("✅ Slack 알림 전송 완료!")
+            else:
+                print(f"❌ Slack 전송 실패: {response.status_code}")
+                print(f"응답: {response.text}")
         except Exception as e:
-            print(f"이메일 전송 실패: {e}")
+            print(f"❌ Slack 전송 중 오류: {e}")
     
     def save_to_file(self, content):
         """결과를 파일로 저장"""
@@ -132,9 +135,9 @@ class RealEstateNewsCollector:
         # 3. 파일로 저장
         self.save_to_file(analyzed_content)
         
-        # 4. 이메일 전송
-        print("이메일 전송 중...")
-        self.send_email(analyzed_content)
+        # 4. Slack으로 전송
+        print("Slack 알림 전송 중...")
+        self.send_slack_notification(analyzed_content)
         
         print("작업 완료!")
 
