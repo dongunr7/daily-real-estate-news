@@ -20,9 +20,10 @@ jobs:
       with:
         python-version: '3.11'
         
-    - name: Install dependencies
-      run: |
-        pip install anthropic requests beautifulsoup4 lxml python-dateutil
+- name: Install dependencies
+  run: |
+    python -m pip install --upgrade pip
+    pip install anthropic requests beautifulsoup4 lxml python-dateutil
         
     - name: Run news collection script
       env:
