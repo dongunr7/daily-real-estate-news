@@ -1,0 +1,9 @@
+python-dateutil>=2.9
+pytz>=2024.1
+python-dotenv>=1.0
+requests>=2.32
+urllib3>=2.2
+beautifulsoup4>=4.12
+trafilatura>=1.9
+google-generativeai>=0.8
+absl-py>=1.4.0
