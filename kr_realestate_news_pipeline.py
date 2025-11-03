@@ -520,7 +520,6 @@ def main():
         /* 하단 링크 섹션 */
         div.links-section {
             margin-top: 30px;
-            border-top: 2px solid #000;
             padding-top: 15px;
         }
         div.links-section p {
