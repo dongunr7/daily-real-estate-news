@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 KR Real Estate News Pipeline (macro-focused)
-- v31.0 Email Report: 이메일로 뉴스 요약 리포트 발송
+- v31.1 Email Report: 1차 필터링 후 5개 미만 시 2차 필터링으로 5개 채우기
 """
 
 # ── gRPC/ABSL 경고 억제 ──────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Version / Config
 # ───────────────────────────────────────────────────────────────────────────────
 class Config:
-    VERSION = "v31.0 (Email Report)" # 버전명 수정
+    VERSION = "v31.1 (Email Report, Fill-5)" # 버전명 수정
     KST = pytz.timezone("Asia/Seoul")
     NAVER_ENDPOINT = "https://openapi.naver.com/v1/search/news.json"
 
@@ -168,7 +168,7 @@ def ai_summarize_gemini(text: str) -> str:
     
     try:
         # 수정: 'prompt' 대신 'full_prompt'를 전달
-        resp = gem_model.generate_content(full_prompt) 
+        resp = gem_model.generate_content(full_prompt)  
         out = (resp.text or "").strip()
         
         # 후처리 로직은 기존과 동일
@@ -257,7 +257,7 @@ def norm_link(u:str) -> str:
 def normalize_news_url(u:str)->str:
     return re.sub(r"\?.*$", "", norm_link(u))
 def looks_like_article_url(u:str)->bool:
-    return any(re.search(p, u) for p in [r"sedaily\.com", r"hankyung\.com", r"yna\.co\.kr", r"sbs\.co\.kr", r"chosun\.com", r"mk\.co.kr", r"mt\.co.kr", r"fnnews\.com", r"newsis\.com", r"korea\.kr", r"joongang\.co\.kr", r"hani\.co\.kr", r"khan\.co.kr", r"kbs\.co\.kr", r"imbc\.com"])
+    return any(re.search(p, u) for p in [r"sedaily\.com", r"hankyung\.com", r"yna\.co\.kr", r"sbs\.co\.kr", r"chosun\.com", r"mk\.co\.kr", r"mt\.co\.kr", r"fnnews\.com", r"newsis\.com", r"korea\.kr", r"joongang\.co\.kr", r"hani\.co\.kr", r"khan\.co\.kr", r"kbs\.co\.kr", r"imbc\.com"])
 def outlet_from_url(url:str) -> str:
     h = host(url)
     for dom, name in Config.DOMAIN2OUTLET.items():
@@ -431,11 +431,56 @@ def main():
 
     processed_articles = rerank_policy_bias(processed_articles)
     
+    # -----------------------------------------------------------------
+    # (수정) 1차/2차 필터링 로직
+    # -----------------------------------------------------------------
+    target_count = 5
+    max_per_outlet = 2 # filter_diverse_articles_by_keyword의 기본값과 동일하게 설정
+
+    # --- 1차 필터링 (기존 로직) ---
     if Config.DEDUPE_METHOD == "GEMINI":
-        results = filter_diverse_articles_by_gemini(processed_articles)
+        results = filter_diverse_articles_by_gemini(processed_articles, target=target_count)
     else:
-        results = filter_diverse_articles_by_keyword(processed_articles)
+        results = filter_diverse_articles_by_keyword(processed_articles, target=target_count, max_per_outlet=max_per_outlet)
     
+    # --- 2차 채우기 로직 (수정/추가) ---
+    if len(results) < target_count:
+        logging.info(f"1차 필터링 결과 {len(results)}건. {target_count}건을 채우기 위해 2차 필터링을 시작합니다.")
+        
+        # 1차 결과에서 이미 선택된 기사 링크와 요약문
+        seen_links = {r['link'] for r in results}
+        seen_summaries = {r['summary'] for r in results}
+        
+        # 1차 결과의 언론사 카운트 집계
+        outlet_count = {}
+        for r in results:
+            outlet_count[r["outlet"]] = outlet_count.get(r["outlet"], 0) + 1
+
+        # 1차에서 선택되지 않은 나머지 기사들로 2차 필터링
+        for article in processed_articles:
+            # 5개 다 채웠으면 즉시 종료
+            if len(results) >= target_count:
+                break
+            
+            # 1차 결과에 이미 포함된 기사면 건너뛰기
+            if article['link'] in seen_links:
+                continue
+                
+            # 2-1. 언론사별 최대 갯수 체크
+            if outlet_count.get(article["outlet"], 0) >= max_per_outlet:
+                continue
+                
+            # 2-2. 1차 결과와 내용 중복 체크 (키워드 기반)
+            is_too_similar = any(are_summaries_similar_by_keyword(article['summary'], ex_summary) for ex_summary in seen_summaries)
+            
+            if not is_too_similar:
+                results.append(article)
+                seen_links.add(article['link']) # 2차에서 추가된 것도 기록
+                seen_summaries.add(article['summary']) # 2차에서 추가된 것도 기록
+                outlet_count[article["outlet"]] = outlet_count.get(article["outlet"], 0) + 1
+                logging.info(f"2차 필터링으로 기사 추가: [{article['outlet']}] {article['title']}")
+    # -----------------------------------------------------------------
+
     if not results:
         logging.info("최종 선별된 기사가 없습니다.")
         return
@@ -454,9 +499,9 @@ def main():
     final_text_output = "\n".join(txt_out)
     print(final_text_output) # 터미널에 출력
 
-    # 2. 이메일 발송용 (HTML) - (수정됨)
+    # 2. 이메일 발송용 (HTML) - (기존과 동일)
     
-    # (수정) 스타일시트: 제목(h2) 색상 변경, 링크 섹션 스타일 추가
+    # 스타일시트: 제목(h2) 색상 변경, 링크 섹션 스타일 추가
     styles = """
     <style>
         body { font-family: sans-serif; margin: 20px; }
@@ -495,7 +540,7 @@ def main():
     html_out = [f"<html><head>{styles}</head><body>"]
     html_out.append(f"<h1>{subject_line}</h1>")
     
-    # (수정) 기사 목록: <a> 태그 제거
+    # 기사 목록: <a> 태그 제거
     for r in results:
         html_out.append("<div class='article-item'>")
         html_out.append(f"<h2>[{r['outlet']}] {r['title']}</h2>") # <-- <a> 태그 제거
@@ -503,7 +548,7 @@ def main():
         html_out.append(f"<span>({r['date']})</span>")
         html_out.append("</div>")
     
-    # (추가) 하단 기사 링크 섹션
+    # 하단 기사 링크 섹션
     html_out.append("<div class='links-section'>")
     html_out.append("<p><b>기사 링크 :</b></p>")
     for i, r in enumerate(results, 1):
