@@ -79,13 +79,75 @@ class Config:
         "imnews.imbc.com":"MBC","korea.kr":"정책브리핑"
     }
 
-    # 키워드 및 필터링 규칙
+    # ==============================================================================
+    # (수정) 키워드 및 필터링 규칙
+    # ==============================================================================
+
+    # 1. 10개 카테고리별 세부 키워드 (필터링/가중치용)
+    MARKET_KWS = ["아파트값", "집값", "매매가", "전세가", "상승", "하락", "보합", "급등", "급락", "반등", "거래량", "거래절벽", "매물 적체", "매수 심리", "관망세", "갭투자", "외지인 투자", "낙찰가율", "경매"]
+    POLICY_KWS = ["부동산 대책", "주거 안정", "1.10 대책", "임대차 3법", "전월세 상한제", "계약갱신청구권", "주거 사다리", "청년 주거", "신혼부부 지원", "공시가격 현실화", "국토교통부", "기획재정부", "금융위원회", "한국은행"]
+    REGULATION_KWS = ["규제 완화", "규제 강화", "투기과열지구", "조정대상지역", "규제지역 해제", "분양가 상한제", "분상제", "실거주 의무", "토지거래허가구역", "자금조달계획서"]
+    FINANCE_KWS = ["기준금리", "금리 인상", "금리 인하", "코픽스", "COFIX", "가계부채", "PF", "프로젝트 파이낸싱", "부실", "연체율", "주택금융공사", "HF", "HUG", "주택연금"]
+    LOAN_KWS = ["LTV", "DTI", "DSR", "스트레스 DSR", "주택담보대출", "주담대", "전세자금대출", "디딤돌대출", "보금자리론", "특례보금자리론", "신생아 특례대출", "대출 한도", "가산금리", "중도금 대출"]
+    TAX_KWS = ["양도세", "취득세", "종부세", "재산세", "증여세", "상속세", "비과세", "감면", "중과", "유예", "양도세 중과 유예", "1가구 1주택", "다주택자", "일시적 2주택", "분양권 세금", "세법 개정"]
+    SUPPLY_KWS = ["공급 대책", "입주 물량", "공급 가뭄", "공공분양", "민간분양", "사전 청약", "공공임대", "3기 신도시", "신도시", "택지지구", "LH", "인허가"]
+    DEVELOPMENT_KWS = ["재개발", "재건축", "리모델링", "신속통합기획", "신통기획", "모아타운", "역세권 개발", "재건축초과이익환수제", "재초환", "안전진단", "GTX", "신설역", "SOC", "정비사업"]
+    SUBSCRIPTION_KWS = ["청약", "청약 경쟁률", "줍줍", "무순위 청약", "미계약", "청약 가점", "당첨선", "미분양", "악성 미분양", "완판", "분양가", "모델하우스", "견본주택"]
+    BROKERAGE_KWS = ["공인중개사법", "중개보수", "수수료", "실거래가", "부동산 플랫폼", "허위 매물", "전자계약", "전세 사기", "이중계약", "확인설명서", "중개업소"]
+
+    # 2. 핵심 검색 및 필터링 리스트
+    
+    # 2-0. (유지) 제목 1차 필터링용 핵심 명사
+    # Naver 검색 직후 1차 필터링에 사용됨. (has_core_in_title)
     CORE_IN_TITLE = ["집값","아파트값","매매가격","전세가격","전셋값","가격지수","KB시세","한국부동산원","거래량","거래절벽","매물","수급","공급","입주물량","분양물량","미분양","대책","공급대책","규제지역","토지거래허가","정비사업","재건축","재개발","금리","기준금리","LTV","DSR","대출규제","전세대출","보유세","종부세","취득세","양도세"]
-    REAL_ESTATE_KWS = list(set(CORE_IN_TITLE + ["시장동향","지표","전망","심리지수","낙찰가율","경매","거래대금","한강벨트","강남3구","수도권","지방","광역시","학군지","특별건축구역","인허가","도시개발","택지개발","공공주택","PF","전월세","임대차","갭투자","보증금","국토교통부","기획재정부","금융위원회","한국은행","HUG","LH","정책브리핑"]))
-    BLACKLIST = ["사설","칼럼","opinion","기고","만평","상담","연예","게임","스포츠","화재","폭발","사고","체납","횡령","체포","ETF","펀드","주식","채권","선물","옵션","코인","비트코인","웹3","가상자산"]
-    QUERY_TERMS = ["집값","아파트값","매매가격","전세가격","거래량","미분양","입주물량","부동산 대책","공급 대책","규제지역","토지거래허가구역","금리 부동산","LTV DSR","보유세 종부세","취득세 양도세","한국부동산원 지수","KB시세 동향","국토부 발표"]
-    TITLE_PENALTY = ["설문","전망","예상","예측","인터뷰"]
-    TITLE_BONUS = ["공급","규제","완화","강화","인허가","정비사업","미분양","실거래","LH","대출","세제"]
+
+    # 2-1. (대체) 전체 부동산 키워드 리스트 (모든 카테고리 통합)
+    # 본문 내용 체크(body_is_real_estate)에 사용됨. 기존 REAL_ESTATE_KWS 대체.
+    ALL_KWS = list(set(
+        MARKET_KWS + POLICY_KWS + REGULATION_KWS + FINANCE_KWS + LOAN_KWS +
+        TAX_KWS + SUPPLY_KWS + DEVELOPMENT_KWS + SUBSCRIPTION_KWS + BROKERAGE_KWS +
+        CORE_IN_TITLE # 1차 필터 키워드도 당연히 포함
+    ))
+
+    # 2-2. (수정) 핵심 검색어 리스트 (기사 수집용)
+    QUERY_TERMS = [
+        "아파트값", "전세가", "부동산 거래량", "미분양", "입주물량",                 # 시장
+        "부동산 대책", "공급 대책", "국토부 발표", "세법 개정",                       # 정책/세금
+        "규제지역 해제", "토지거래허가구역", "분양가 상한제", "실거주 의무",           # 규제
+        "GTX", "재건축", "재개발", "신통기획", "모아타운",                           # 개발
+        "LTV", "DSR", "스트레스 DSR", "주택담보대출", "신생아 특례대출", "전세사기",  # 금융/대출
+        "청약 경쟁률", "줍줍", "사전 청약",                                           # 분양
+        "한국부동산원", "KB시세"                                                     # 지표
+    ]
+    
+    # 2-3. (수정) 블랙리스트 (기사 제외)
+    BLACKLIST = [
+        # 기존 리스트
+        "사설", "칼럼", "opinion", "기고", "만평", "상담", "연예", "게임", "스포츠",
+        "화재", "폭발", "사고", "체납", "횡령", "체포", "ETF", "펀드", "주식",
+        "채권", "선물", "옵션", "코인", "비트코인", "웹3", "가상자산",
+        # 추가 리스트
+        "부고", "인사", "동정", "운세", "포토", "날씨", "증시", "환율",           # 비관련 섹션
+        "이벤트", "경품", "추첨", "무료", "할인", "광고", "홍보", "협찬",           # 광고/스팸
+        "OOO 기자" # 가끔 기자 이름이 제목에 포함될 때
+    ]
+
+    # 2-4. (수정) 기사 제목 페널티 키워드 (중요도 DOWN)
+    TITLE_PENALTY = [
+        "설문", "전망", "예상", "예측", "인터뷰", "분석", "의견", "전문가", "관계자", # 추측/의견
+        "화제", "눈길", "이유는", " 살펴보니",                                 # 홍보/가십
+        "오피스텔", "상가", "지식산업센터", "빌라", "생활형숙박시설",              # (아파트 외)
+        "해외", "미국", "중국"                                                  # 해외 부동산
+    ]
+
+    # 2-5. (수정) 기사 제목 보너스 키워드 (중요도 UP)
+    TITLE_BONUS = [
+        "발표", "시행", "확대", "완화", "강화", "도입", "폐지", "유예", "개정",    # 정책/규제 동사
+        "공급", "대책", "규제", "세제", "대출", "특례", "LTV", "DSR", "재초환", # 핵심 정책
+        "GTX", "재건축", "재개발", "신통기획", "모아타운", "안전진단", "인허가",   # 핵심 개발
+        "미분양", "실거래", "거래량", "급등", "급락", "LH", "HUG", "국토부"       # 핵심 현상/기관
+    ]
+    # ==============================================================================
 
 def make_session():
     s = requests.Session()
@@ -257,7 +319,7 @@ def norm_link(u:str) -> str:
 def normalize_news_url(u:str)->str:
     return re.sub(r"\?.*$", "", norm_link(u))
 def looks_like_article_url(u:str)->bool:
-    return any(re.search(p, u) for p in [r"sedaily\.com", r"hankyung\.com", r"yna\.co\.kr", r"sbs\.co\.kr", r"chosun\.com", r"mk\.co\.kr", r"mt\.co\.kr", r"fnnews\.com", r"newsis\.com", r"korea\.kr", r"joongang\.co\.kr", r"hani\.co\.kr", r"khan\.co\.kr", r"kbs\.co\.kr", r"imbc\.com"])
+    return any(re.search(p, u) for p in [r"sedaily\.com", r"hankyung\.com", r"yna\.co\.kr", r"sbs\.co.kr", r"chosun\.com", r"mk\.co\.kr", r"mt\.co\.kr", r"fnnews\.com", r"newsis\.com", r"korea\.kr", r"joongang\.co\.kr", r"hani\.co\.kr", "khan\.co\.kr", r"kbs\.co\.kr", r"imbc\.com"])
 def outlet_from_url(url:str) -> str:
     h = host(url)
     for dom, name in Config.DOMAIN2OUTLET.items():
@@ -281,8 +343,11 @@ def clean(s:str) -> str:
 def has_core_in_title(title:str) -> bool: return any(k in title for k in Config.CORE_IN_TITLE)
 def has_blacklist(txt:str) -> bool: 
     return any(k in txt for k in Config.BLACKLIST)
+
+# (*** 수정 ***) Config.REAL_ESTATE_KWS -> Config.ALL_KWS로 변경
 def body_is_real_estate(text:str, min_hits:int=2)->bool:
-    return sum(1 for k in Config.REAL_ESTATE_KWS if k in text) >= min_hits
+    return sum(1 for k in Config.ALL_KWS if k in text) >= min_hits
+
 def naver_search(q:str, display=30, pages=3):
     headers={"X-Naver-Client-Id":Config.NAVER_CLIENT_ID, "X-Naver-Client-Secret":Config.NAVER_CLIENT_SECRET}
     items=[]
@@ -491,7 +556,7 @@ def main():
     # 1. 터미널 출력용 (Plain Text) - (기존과 동일)
     txt_out = [f"{subject_line} · {Config.VERSION}", "```text"]
     for i, r in enumerate(results, 1):
-        txt_out.extend([f"{i}) 기사제목: {r['title']}", f"   본문 요약: {r['summary']}", f"   ({r['date']}, {r['outlet']})\n"])
+        txt_out.extend([f"{i}) 기사제목: {r['title']}", f"    본문 요약: {r['summary']}", f"    ({r['date']}, {r['outlet']})\n"])
     txt_out.extend(["```", "\n근거 링크"])
     for i, r in enumerate(results, 1):
         txt_out.append(f"- ({i}) {r['link']}")
