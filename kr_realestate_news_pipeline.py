@@ -97,9 +97,13 @@ class Config:
 
     # 2. 핵심 검색 및 필터링 리스트
     
-    # 2-0. (유지) 제목 1차 필터링용 핵심 명사
+    # 2-0. (*** 수정 ***) 제목 1차 필터링용 핵심 명사 (포괄적 단어 추가)
     # Naver 검색 직후 1차 필터링에 사용됨. (has_core_in_title)
-    CORE_IN_TITLE = ["집값","아파트값","매매가격","전세가격","전셋값","가격지수","KB시세","한국부동산원","거래량","거래절벽","매물","수급","공급","입주물량","분양물량","미분양","대책","공급대책","규제지역","토지거래허가","정비사업","재건축","재개발","금리","기준금리","LTV","DSR","대출규제","전세대출","보유세","종부세","취득세","양도세"]
+    CORE_IN_TITLE = ["부동산", "주택", "아파트", "청약", "시장", "주거", # <-- 5개 못 채우는 문제 해결용 포괄 키워드
+                     "집값","아파트값","매매가격","전세가격","전셋값","가격지수","KB시세","한국부동산원",
+                     "거래량","거래절벽","매물","수급","공급","입주물량","분양물량","미분양",
+                     "대책","공급대책","규제지역","토지거래허가","정비사업","재건축","재개발",
+                     "금리","기준금리","LTV","DSR","대출규제","전세대출","보유세","종부세","취득세","양도세"]
 
     # 2-1. (대체) 전체 부동산 키워드 리스트 (모든 카테고리 통합)
     # 본문 내용 체크(body_is_real_estate)에 사용됨. 기존 REAL_ESTATE_KWS 대체.
@@ -319,7 +323,7 @@ def norm_link(u:str) -> str:
 def normalize_news_url(u:str)->str:
     return re.sub(r"\?.*$", "", norm_link(u))
 def looks_like_article_url(u:str)->bool:
-    return any(re.search(p, u) for p in [r"sedaily\.com", r"hankyung\.com", r"yna\.co\.kr", r"sbs\.co.kr", r"chosun\.com", r"mk\.co\.kr", r"mt\.co\.kr", r"fnnews\.com", r"newsis\.com", r"korea\.kr", r"joongang\.co\.kr", r"hani\.co\.kr", "khan\.co\.kr", r"kbs\.co\.kr", r"imbc\.com"])
+    return any(re.search(p, u) for p in [r"sedaily\.com", r"hankyung\.com", r"yna\.co\.kr", r"sbs\.co.kr", r"chosun\.com", r"mk\.co.kr", r"mt\.co.kr", r"fnnews\.com", r"newsis\.com", r"korea\.kr", r"joongang\.co.kr", r"hani\.co\.kr", "khan\.co\.kr", r"kbs\.co\.kr", r"imbc\.com"])
 def outlet_from_url(url:str) -> str:
     h = host(url)
     for dom, name in Config.DOMAIN2OUTLET.items():
@@ -340,7 +344,7 @@ def norm_title(t:str) -> str:
     return t
 def clean(s:str) -> str:
     return re.sub(r"\s+"," ", html.unescape(s or "")).strip()
-def has_core_in_title(title:str) -> bool: return any(k in title for k in Config.CORE_IN_TITLE)
+def has_core_in_title(title:str) -> bool: return any(k in title for k in Config.CORE_IN_TICLE)
 def has_blacklist(txt:str) -> bool: 
     return any(k in txt for k in Config.BLACKLIST)
 
