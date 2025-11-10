@@ -100,10 +100,10 @@ class Config:
     # 2-0. (*** 수정 ***) 제목 1차 필터링용 핵심 명사 (포괄적 단어 추가)
     # Naver 검색 직후 1차 필터링에 사용됨. (has_core_in_title)
     CORE_IN_TITLE = ["부동산", "주택", "아파트", "청약", "시장", "주거", # <-- 5개 못 채우는 문제 해결용 포괄 키워드
-                     "집값","아파트값","매매가격","전세가격","전셋값","가격지수","KB시세","한국부동산원",
-                     "거래량","거래절벽","매물","수급","공급","입주물량","분양물량","미분양",
-                     "대책","공급대책","규제지역","토지거래허가","정비사업","재건축","재개발",
-                     "금리","기준금리","LTV","DSR","대출규제","전세대출","보유세","종부세","취득세","양도세"]
+                       "집값","아파트값","매매가격","전세가격","전셋값","가격지수","KB시세","한국부동산원",
+                       "거래량","거래절벽","매물","수급","공급","입주물량","분양물량","미분양",
+                       "대책","공급대책","규제지역","토지거래허가","정비사업","재건축","재개발",
+                       "금리","기준금리","LTV","DSR","대출규제","전세대출","보유세","종부세","취득세","양도세"]
 
     # 2-1. (대체) 전체 부동산 키워드 리스트 (모든 카테고리 통합)
     # 본문 내용 체크(body_is_real_estate)에 사용됨. 기존 REAL_ESTATE_KWS 대체.
@@ -116,12 +116,12 @@ class Config:
     # 2-2. (수정) 핵심 검색어 리스트 (기사 수집용)
     QUERY_TERMS = [
         "아파트값", "전세가", "부동산 거래량", "미분양", "입주물량",                 # 시장
-        "부동산 대책", "공급 대책", "국토부 발표", "세법 개정",                       # 정책/세금
-        "규제지역 해제", "토지거래허가구역", "분양가 상한제", "실거주 의무",           # 규제
-        "GTX", "재건축", "재개발", "신통기획", "모아타운",                           # 개발
-        "LTV", "DSR", "스트레스 DSR", "주택담보대출", "신생아 특례대출", "전세사기",  # 금융/대출
-        "청약 경쟁률", "줍줍", "사전 청약",                                           # 분양
-        "한국부동산원", "KB시세"                                                     # 지표
+        "부동산 대책", "공급 대책", "국토부 발표", "세법 개정",                     # 정책/세금
+        "규제지역 해제", "토지거래허가구역", "분양가 상한제", "실거주 의무",          # 규제
+        "GTX", "재건축", "재개발", "신통기획", "모아타운",                      # 개발
+        "LTV", "DSR", "스트레스 DSR", "주택담보대출", "신생아 특례대출", "전세사기", # 금융/대출
+        "청약 경쟁률", "줍줍", "사전 청약",                                   # 분양
+        "한국부동산원", "KB시세"                                            # 지표
     ]
     
     # 2-3. (수정) 블랙리스트 (기사 제외)
@@ -131,17 +131,17 @@ class Config:
         "화재", "폭발", "사고", "체납", "횡령", "체포", "ETF", "펀드", "주식",
         "채권", "선물", "옵션", "코인", "비트코인", "웹3", "가상자산",
         # 추가 리스트
-        "부고", "인사", "동정", "운세", "포토", "날씨", "증시", "환율",           # 비관련 섹션
-        "이벤트", "경품", "추첨", "무료", "할인", "광고", "홍보", "협찬",           # 광고/스팸
+        "부고", "인사", "동정", "운세", "포토", "날씨", "증시", "환율",        # 비관련 섹션
+        "이벤트", "경품", "추첨", "무료", "할인", "광고", "홍보", "협찬",        # 광고/스팸
         "OOO 기자" # 가끔 기자 이름이 제목에 포함될 때
     ]
 
     # 2-4. (수정) 기사 제목 페널티 키워드 (중요도 DOWN)
     TITLE_PENALTY = [
         "설문", "전망", "예상", "예측", "인터뷰", "분석", "의견", "전문가", "관계자", # 추측/의견
-        "화제", "눈길", "이유는", " 살펴보니",                                 # 홍보/가십
-        "오피스텔", "상가", "지식산업센터", "빌라", "생활형숙박시설",              # (아파트 외)
-        "해외", "미국", "중국"                                                  # 해외 부동산
+        "화제", "눈길", "이유는", " 살펴보니",                         # 홍보/가십
+        "오피스텔", "상가", "지식산업센터", "빌라", "생활형숙박시설",            # (아파트 외)
+        "해외", "미국", "중국"                                     # 해외 부동산
     ]
 
     # 2-5. (수정) 기사 제목 보너스 키워드 (중요도 UP)
@@ -323,7 +323,8 @@ def norm_link(u:str) -> str:
 def normalize_news_url(u:str)->str:
     return re.sub(r"\?.*$", "", norm_link(u))
 def looks_like_article_url(u:str)->bool:
-    return any(re.search(p, u) for p in [r"sedaily\.com", r"hankyung\.com", r"yna\.co\.kr", r"sbs\.co.kr", r"chosun\.com", r"mk\.co.kr", r"mt\.co.kr", r"fnnews\.com", r"newsis\.com", r"korea\.kr", r"joongang\.co.kr", r"hani\.co\.kr", "khan\.co\.kr", r"kbs\.co\.kr", r"imbc\.com"])
+    # (FIX 1) "khan\.co\.kr" -> r"khan\.co\.kr"
+    return any(re.search(p, u) for p in [r"sedaily\.com", r"hankyung\.com", r"yna\.co\.kr", r"sbs\.co\.kr", r"chosun\.com", r"mk\.co\.kr", r"mt\.co\.kr", r"fnnews\.com", r"newsis\.com", r"korea\.kr", r"joongang\.co\.kr", r"hani\.co\.kr", r"khan\.co\.kr", r"kbs\.co\.kr", r"imbc\.com"])
 def outlet_from_url(url:str) -> str:
     h = host(url)
     for dom, name in Config.DOMAIN2OUTLET.items():
@@ -344,7 +345,9 @@ def norm_title(t:str) -> str:
     return t
 def clean(s:str) -> str:
     return re.sub(r"\s+"," ", html.unescape(s or "")).strip()
-def has_core_in_title(title:str) -> bool: return any(k in title for k in Config.CORE_IN_TICLE)
+def has_core_in_title(title:str) -> bool: 
+    # (FIX 2) CORE_IN_TICLE -> CORE_IN_TITLE
+    return any(k in title for k in Config.CORE_IN_TITLE)
 def has_blacklist(txt:str) -> bool: 
     return any(k in txt for k in Config.BLACKLIST)
 
