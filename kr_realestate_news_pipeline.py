@@ -355,7 +355,7 @@ def has_blacklist(txt:str) -> bool:
 def body_is_real_estate(text:str, min_hits:int=2)->bool:
     return sum(1 for k in Config.ALL_KWS if k in text) >= min_hits
 
-def naver_search(q:str, display=30, pages=3):
+def naver_search(q:str, display=100, pages=3):
     headers={"X-Naver-Client-Id":Config.NAVER_CLIENT_ID, "X-Naver-Client-Secret":Config.NAVER_CLIENT_SECRET}
     items=[]
     for i in range(pages):
@@ -638,3 +638,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
