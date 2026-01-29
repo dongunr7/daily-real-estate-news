@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 KR Real Estate News Pipeline (macro-focused)
-- v31.1 Email Report: 1차 필터링 후 5개 미만 시 2차 필터링으로 5개 채우기
+- v31.5 Model Switch: gemini-1.5-flash applied + Safety Fixes
 """
 
 # ── gRPC/ABSL 경고 억제 ──────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ── (추가) 이메일 라이브러리 ──────────────────────────────────
+# ── 이메일 라이브러리 ──────────────────────────────────
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -45,7 +45,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Version / Config
 # ───────────────────────────────────────────────────────────────────────────────
 class Config:
-    VERSION = "v31.1 (Email Report, Fill-5)" # 버전명 수정
+    VERSION = "v31.5 (Gemini Flash)" 
     KST = pytz.timezone("Asia/Seoul")
     NAVER_ENDPOINT = "https://openapi.naver.com/v1/search/news.json"
 
@@ -56,13 +56,11 @@ class Config:
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
     USE_GEMINI = os.getenv("USE_GEMINI", "1") == "1" and bool(GOOGLE_API_KEY)
     
-    # (삭제) 카카오톡 API 키 부분 제거
-    
     # 중복 제거 방식 선택 ("KEYWORD" 또는 "GEMINI")
     DEDUPE_METHOD = os.getenv("DEDUPE_METHOD", "KEYWORD").upper()
 
-    # 요청 헤더
-    USER_AGENT = "KR-RE-NEWS/" + VERSION
+    # [수정] 요청 헤더 (User-Agent를 크롬 브라우저로 변경하여 차단 방지)
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     REQ_HEADERS = {"User-Agent": USER_AGENT, "Accept-Language": "ko-KR,ko;q=0.9"}
 
     # 허용 언론사
@@ -80,10 +78,10 @@ class Config:
     }
 
     # ==============================================================================
-    # (수정) 키워드 및 필터링 규칙
+    # 키워드 및 필터링 규칙
     # ==============================================================================
 
-    # 1. 10개 카테고리별 세부 키워드 (필터링/가중치용)
+    # 1. 10개 카테고리별 세부 키워드
     MARKET_KWS = ["아파트값", "집값", "매매가", "전세가", "상승", "하락", "보합", "급등", "급락", "반등", "거래량", "거래절벽", "매물 적체", "매수 심리", "관망세", "갭투자", "외지인 투자", "낙찰가율", "경매"]
     POLICY_KWS = ["부동산 대책", "주거 안정", "1.10 대책", "임대차 3법", "전월세 상한제", "계약갱신청구권", "주거 사다리", "청년 주거", "신혼부부 지원", "공시가격 현실화", "국토교통부", "기획재정부", "금융위원회", "한국은행"]
     REGULATION_KWS = ["규제 완화", "규제 강화", "투기과열지구", "조정대상지역", "규제지역 해제", "분양가 상한제", "분상제", "실거주 의무", "토지거래허가구역", "자금조달계획서"]
@@ -97,61 +95,56 @@ class Config:
 
     # 2. 핵심 검색 및 필터링 리스트
     
-    # 2-0. (*** 수정 ***) 제목 1차 필터링용 핵심 명사 (포괄적 단어 추가)
-    # Naver 검색 직후 1차 필터링에 사용됨. (has_core_in_title)
-    CORE_IN_TITLE = ["부동산", "주택", "아파트", "청약", "시장", "주거", # <-- 5개 못 채우는 문제 해결용 포괄 키워드
+    # 2-0. 제목 1차 필터링용 핵심 명사
+    CORE_IN_TITLE = ["부동산", "주택", "아파트", "청약", "시장", "주거", 
                        "집값","아파트값","매매가격","전세가격","전셋값","가격지수","KB시세","한국부동산원",
                        "거래량","거래절벽","매물","수급","공급","입주물량","분양물량","미분양",
                        "대책","공급대책","규제지역","토지거래허가","정비사업","재건축","재개발",
                        "금리","기준금리","LTV","DSR","대출규제","전세대출","보유세","종부세","취득세","양도세"]
 
-    # 2-1. (대체) 전체 부동산 키워드 리스트 (모든 카테고리 통합)
-    # 본문 내용 체크(body_is_real_estate)에 사용됨. 기존 REAL_ESTATE_KWS 대체.
+    # 2-1. 전체 부동산 키워드 리스트
     ALL_KWS = list(set(
         MARKET_KWS + POLICY_KWS + REGULATION_KWS + FINANCE_KWS + LOAN_KWS +
         TAX_KWS + SUPPLY_KWS + DEVELOPMENT_KWS + SUBSCRIPTION_KWS + BROKERAGE_KWS +
-        CORE_IN_TITLE # 1차 필터 키워드도 당연히 포함
+        CORE_IN_TITLE 
     ))
 
-    # 2-2. (수정) 핵심 검색어 리스트 (기사 수집용)
+    # 2-2. 핵심 검색어 리스트
     QUERY_TERMS = [
         "아파트값", "전세가", "부동산 거래량", "미분양", "입주물량",                 # 시장
         "부동산 대책", "공급 대책", "국토부 발표", "세법 개정",                     # 정책/세금
-        "규제지역 해제", "토지거래허가구역", "분양가 상한제", "실거주 의무",          # 규제
-        "GTX", "재건축", "재개발", "신통기획", "모아타운",                      # 개발
+        "규제지역 해제", "토지거래허가구역", "분양가 상한제", "실거주 의무",         # 규제
+        "GTX", "재건축", "재개발", "신통기획", "모아타운",                       # 개발
         "LTV", "DSR", "스트레스 DSR", "주택담보대출", "신생아 특례대출", "전세사기", # 금융/대출
-        "청약 경쟁률", "줍줍", "사전 청약",                                   # 분양
-        "한국부동산원", "KB시세"                                            # 지표
+        "청약 경쟁률", "줍줍", "사전 청약",                                       # 분양
+        "한국부동산원", "KB시세"                                                 # 지표
     ]
     
-    # 2-3. (수정) 블랙리스트 (기사 제외)
+    # 2-3. 블랙리스트
     BLACKLIST = [
-        # 기존 리스트
         "사설", "칼럼", "opinion", "기고", "만평", "상담", "연예", "게임", "스포츠",
         "화재", "폭발", "사고", "체납", "횡령", "체포", "ETF", "펀드", "주식",
         "채권", "선물", "옵션", "코인", "비트코인", "웹3", "가상자산",
-        # 추가 리스트
-        "부고", "인사", "동정", "운세", "포토", "날씨", "증시", "환율",        # 비관련 섹션
-        "이벤트", "경품", "추첨", "무료", "할인", "광고", "홍보", "협찬",        # 광고/스팸
-        "OOO 기자" # 가끔 기자 이름이 제목에 포함될 때
+        "부고", "인사", "동정", "운세", "포토", "날씨", "증시", "환율",        
+        "이벤트", "경품", "추첨", "무료", "할인", "광고", "홍보", "협찬",        
+        "OOO 기자" 
     ]
 
-    # 2-4. (수정) 기사 제목 페널티 키워드 (중요도 DOWN)
+    # 2-4. 기사 제목 페널티 키워드
     TITLE_PENALTY = [
-        "설문", "전망", "예상", "예측", "인터뷰", "분석", "의견", "전문가", "관계자", # 추측/의견
-        "화제", "눈길", "이유는", " 살펴보니",                         # 홍보/가십
-        "오피스텔", "상가", "지식산업센터", "빌라", "생활형숙박시설",            # (아파트 외)
-        "해외", "미국", "중국"                                     # 해외 부동산
+        "설문", "전망", "예상", "예측", "인터뷰", "분석", "의견", "전문가", "관계자",
+        "화제", "눈길", "이유는", " 살펴보니",                                  
+        "오피스텔", "상가", "지식산업센터", "빌라", "생활형숙박시설",             
+        "해외", "미국", "중국"                                              
     ]
 
-    # 2-5. (수정) 기사 제목 보너스 키워드 (중요도 UP)
+    # 2-5. 기사 제목 보너스 키워드
     TITLE_BONUS = [
-        "발표", "시행", "확대", "완화", "강화", "도입", "폐지", "유예", "개정",    # 정책/규제 동사
-        "공급", "대책", "규제", "세제", "대출", "특례", "LTV", "DSR", "재초환", # 핵심 정책
-        "GTX", "재건축", "재개발", "신통기획", "모아타운", "안전진단", "인허가",   # 핵심 개발
-        "미분양", "실거래", "거래량", "급등", "급락", "LH", "HUG", "국토부"       # 핵심 현상/기관
+        "발표", "시행", "확대", "완화", "강화", "도입", "폐지", "유예", "개정",    
+        "공급", "대책", "규제", "세제", "대출", "특례", "LTV", "DSR", "재초환", 
+        "GTX", "재건축", "재개발", "신통기획", "모아타운", "안전진단", "인허가",    
+        "미분양", "실거래", "거래량", "급등", "급락", "LH", "HUG", "국토부"       
     ]
-    # ==============================================================================
 
 def make_session():
     s = requests.Session()
@@ -163,9 +156,7 @@ def make_session():
     return s
 SESSION = make_session()
 
-# ── (삭제) KakaoTalk Functions 섹션 전체 제거 ───────────────────────────────────
-
-# ── (유지) Email Function ───────────────────────────────────────────────────────
+# ── Email Function ───────────────────────────────────────────────────────
 def send_email_report(html_content: str, subject: str):
     """지정된 이메일로 HTML 리포트를 발송합니다."""
     
@@ -183,7 +174,7 @@ def send_email_report(html_content: str, subject: str):
         smtp_port = 587
     elif "@naver.com" in sender_email:
         smtp_server = "smtp.naver.com"
-        smtp_port = 587 # 또는 465 (SSL)
+        smtp_port = 587 
     else:
         logging.error("지원되지 않는 이메일 도메인입니다. (Gmail/Naver만 자동 지원)")
         return
@@ -216,33 +207,53 @@ if Config.USE_GEMINI:
         absl.logging.set_verbosity(absl.logging.ERROR)
         import google.generativeai as genai
         genai.configure(api_key=Config.GOOGLE_API_KEY)
-        gem_model = genai.GenerativeModel("gemini-pro-latest")
+        
+        # [수정] 모델명을 'gemini-1.5-flash'로 변경 (가장 안정적이고 빠름)
+        gem_model = genai.GenerativeModel("gemini-flash-latest")
+        
     except Exception as e:
         logging.warning(f"Gemini 초기화 실패: {e}")
         Config.USE_GEMINI = False
         gem_model = None
 
 def ai_summarize_gemini(text: str) -> str:
+    # [수정] 빈칸 반환 문제 해결을 위한 안전장치 추가
     if not gem_model or not text: return ""
     
-    # 지시사항과 실제 텍스트(text)를 f-string으로 결합
-    full_prompt = f"""다음 한국어 뉴스 본문을 3~5개의 완벽한 문장으로 요약해줘. 각 문장은 '다'나 '요'로 끝나야 해. 핵심 데이터, 정책, 시장 동향을 포함하고 사실 중심으로 작성해줘. 서론이나 부연 설명 없이 요약 문장으로 바로 시작해줘.
+    # [추가] 안전 설정: 뉴스 기사가 차단되지 않도록 BLOCK_NONE 설정
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+
+    full_prompt = f"""다음 부동산 뉴스 본문을 3~5문장으로 요약해줘. 
+개조식(글머리 기호)을 쓰지 말고, 자연스러운 줄글로 작성해.
+'~함', '~음'으로 끝내지 말고 '~다'로 끝나는 완벽한 문장을 써줘.
 
 [뉴스 본문]
 {text}
 """
-    
     try:
-        # 수정: 'prompt' 대신 'full_prompt'를 전달
-        resp = gem_model.generate_content(full_prompt)  
+        # safety_settings 파라미터 추가
+        resp = gem_model.generate_content(full_prompt, safety_settings=safety_settings)
         out = (resp.text or "").strip()
         
-        # 후처리 로직은 기존과 동일
+        if not out: return ""
+
         sents = re.findall(r'[^.!?]+(?:[다요]\.|[.!?])', out)
         sents = [s.strip() for s in sents if s.strip()]
+        
+        # [핵심 수정] 정규식 추출 결과가 비어있다면, 원본(out)을 그대로 반환
+        if not sents:
+            return out
+            
         return " ".join(sents)
     
     except Exception as e:
+        # 에러 확인용 출력
+        print(f"\n[AI Error] 요약 중 에러 발생: {e}")
         logging.error(f"Gemini 요약 중 오류 발생: {e}")
         return ""
 
@@ -273,7 +284,6 @@ def filter_diverse_articles_by_gemini(articles, target=5):
 
     logging.info("Gemini를 이용한 주제 그룹핑 및 대표 기사 선정을 시작합니다...")
     
-    # AI에게 전달할 후보군을 15개로 제한하여 비용 및 시간 효율화
     candidate_articles = articles[:15]
     
     article_candidates_str = ""
@@ -323,7 +333,6 @@ def norm_link(u:str) -> str:
 def normalize_news_url(u:str)->str:
     return re.sub(r"\?.*$", "", norm_link(u))
 def looks_like_article_url(u:str)->bool:
-    # (FIX 1) "khan\.co\.kr" -> r"khan\.co\.kr"
     return any(re.search(p, u) for p in [r"sedaily\.com", r"hankyung\.com", r"yna\.co\.kr", r"sbs\.co\.kr", r"chosun\.com", r"mk\.co\.kr", r"mt\.co\.kr", r"fnnews\.com", r"newsis\.com", r"korea\.kr", r"joongang\.co\.kr", r"hani\.co\.kr", r"khan\.co\.kr", r"kbs\.co\.kr", r"imbc\.com"])
 def outlet_from_url(url:str) -> str:
     h = host(url)
@@ -331,27 +340,18 @@ def outlet_from_url(url:str) -> str:
         if dom in h: return name
     return ""
 def norm_title(t:str) -> str:
-    # 1. 앞/뒤 공백 및 여러 공백을 하나로 합침
     t = re.sub(r"\s+", " ", t).strip()
-    
-    # 2. [속보], [단독] 같은 접두사 제거 (기존 로직)
     t = re.sub(r"^\[[^\]]+\]\s*", "", t)
-    
-    # 3. (추가) "- 언론사명" 형태의 접미사 제거
-    # Config.WHITELIST에 있는 언론사명 리스트를 기반으로 정규식 생성
     suffix_pattern = r"\s*-\s*(매일경제|한국경제|서울경제|조선일보|중앙일보|동아일보|한겨레|경향신문|연합뉴스|뉴시스|조선비즈|머니투데이|파이낸셜뉴스|KBS|SBS|MBC|정책브리핑)$"
     t = re.sub(suffix_pattern, "", t).strip()
-    
     return t
 def clean(s:str) -> str:
     return re.sub(r"\s+"," ", html.unescape(s or "")).strip()
 def has_core_in_title(title:str) -> bool: 
-    # (FIX 2) CORE_IN_TICLE -> CORE_IN_TITLE
     return any(k in title for k in Config.CORE_IN_TITLE)
 def has_blacklist(txt:str) -> bool: 
     return any(k in txt for k in Config.BLACKLIST)
 
-# (*** 수정 ***) Config.REAL_ESTATE_KWS -> Config.ALL_KWS로 변경
 def body_is_real_estate(text:str, min_hits:int=2)->bool:
     return sum(1 for k in Config.ALL_KWS if k in text) >= min_hits
 
@@ -453,7 +453,16 @@ def process_article(item: dict, since: datetime, until: datetime) -> dict | None
         body = extract_text_from_html(link, html_text)
         if not body or not body_is_real_estate(body): return None
 
-        summary = ai_summarize_gemini(body) if Config.USE_GEMINI else item["desc"]
+        # AI 요약 시도
+        summary = ""
+        if Config.USE_GEMINI:
+            summary = ai_summarize_gemini(body)
+        
+        # [핵심 수정] desc -> description 으로 변경!
+        # AI가 실패하거나(빈값), 사용하지 않을 때 네이버 기본 요약을 가져옴
+        if not summary:
+            summary = clean(item.get("description", ""))
+
         full_title = extract_full_title_from_html(html_text)
 
         return {
@@ -504,51 +513,44 @@ def main():
     processed_articles = rerank_policy_bias(processed_articles)
     
     # -----------------------------------------------------------------
-    # (수정) 1차/2차 필터링 로직
+    # 1차/2차 필터링 로직
     # -----------------------------------------------------------------
     target_count = 5
-    max_per_outlet = 2 # filter_diverse_articles_by_keyword의 기본값과 동일하게 설정
+    max_per_outlet = 2 
 
-    # --- 1차 필터링 (기존 로직) ---
+    # --- 1차 필터링 ---
     if Config.DEDUPE_METHOD == "GEMINI":
         results = filter_diverse_articles_by_gemini(processed_articles, target=target_count)
     else:
         results = filter_diverse_articles_by_keyword(processed_articles, target=target_count, max_per_outlet=max_per_outlet)
     
-    # --- 2차 채우기 로직 (수정/추가) ---
+    # --- 2차 채우기 로직 ---
     if len(results) < target_count:
         logging.info(f"1차 필터링 결과 {len(results)}건. {target_count}건을 채우기 위해 2차 필터링을 시작합니다.")
         
-        # 1차 결과에서 이미 선택된 기사 링크와 요약문
         seen_links = {r['link'] for r in results}
         seen_summaries = {r['summary'] for r in results}
         
-        # 1차 결과의 언론사 카운트 집계
         outlet_count = {}
         for r in results:
             outlet_count[r["outlet"]] = outlet_count.get(r["outlet"], 0) + 1
 
-        # 1차에서 선택되지 않은 나머지 기사들로 2차 필터링
         for article in processed_articles:
-            # 5개 다 채웠으면 즉시 종료
             if len(results) >= target_count:
                 break
             
-            # 1차 결과에 이미 포함된 기사면 건너뛰기
             if article['link'] in seen_links:
                 continue
                 
-            # 2-1. 언론사별 최대 갯수 체크
             if outlet_count.get(article["outlet"], 0) >= max_per_outlet:
                 continue
                 
-            # 2-2. 1차 결과와 내용 중복 체크 (키워드 기반)
             is_too_similar = any(are_summaries_similar_by_keyword(article['summary'], ex_summary) for ex_summary in seen_summaries)
             
             if not is_too_similar:
                 results.append(article)
-                seen_links.add(article['link']) # 2차에서 추가된 것도 기록
-                seen_summaries.add(article['summary']) # 2차에서 추가된 것도 기록
+                seen_links.add(article['link'])
+                seen_summaries.add(article['summary'])
                 outlet_count[article["outlet"]] = outlet_count.get(article["outlet"], 0) + 1
                 logging.info(f"2차 필터링으로 기사 추가: [{article['outlet']}] {article['title']}")
     # -----------------------------------------------------------------
@@ -560,7 +562,7 @@ def main():
     # --- 결과물 생성 (Text 및 HTML) ---
     subject_line = f"📰 [{since.strftime('%Y-%m-%d')}] 부동산 뉴스 요약 ({len(results)}건)"
     
-    # 1. 터미널 출력용 (Plain Text) - (기존과 동일)
+    # 1. 터미널 출력용
     txt_out = [f"{subject_line} · {Config.VERSION}", "```text"]
     for i, r in enumerate(results, 1):
         txt_out.extend([f"{i}) 기사제목: {r['title']}", f"    본문 요약: {r['summary']}", f"    ({r['date']}, {r['outlet']})\n"])
@@ -569,27 +571,23 @@ def main():
         txt_out.append(f"- ({i}) {r['link']}")
     
     final_text_output = "\n".join(txt_out)
-    print(final_text_output) # 터미널에 출력
+    print(final_text_output)
 
-    # 2. 이메일 발송용 (HTML) - (기존과 동일)
-    
-    # 스타일시트: 제목(h2) 색상 변경, 링크 섹션 스타일 추가
+    # 2. 이메일 발송용 (HTML)
     styles = """
     <style>
         body { font-family: sans-serif; margin: 20px; }
         h1 { font-size: 1.3em; }
-        h2 { font-size: 1.1em; margin-bottom: 5px; color: #000; } /* 링크 제거 후 검은색으로 */
+        h2 { font-size: 1.1em; margin-bottom: 5px; color: #000; } 
         p { font-size: 0.95em; color: #333; margin-top: 5px; line-height: 1.5; }
         span { font-size: 0.85em; color: #777; }
         
-        /* 기사 본문 아이템 */
         div.article-item { 
             border-bottom: 1px solid #eee; 
             padding-bottom: 15px; 
             margin-bottom: 15px; 
         }
         
-        /* 하단 링크 섹션 */
         div.links-section {
             margin-top: 30px;
             padding-top: 15px;
@@ -599,7 +597,7 @@ def main():
             margin: 8px 0;
         }
         div.links-section a {
-            color: #007bff; /* 링크 색상 */
+            color: #007bff;
             text-decoration: none;
         }
         div.links-section a:hover {
@@ -611,31 +609,23 @@ def main():
     html_out = [f"<html><head>{styles}</head><body>"]
     html_out.append(f"<h1>{subject_line}</h1>")
     
-    # 기사 목록: <a> 태그 제거
     for r in results:
         html_out.append("<div class='article-item'>")
-        html_out.append(f"<h2>[{r['outlet']}] {r['title']}</h2>") # <-- <a> 태그 제거
+        html_out.append(f"<h2>[{r['outlet']}] {r['title']}</h2>") 
         html_out.append(f"<p>{r['summary']}</p>")
         html_out.append(f"<span>({r['date']})</span>")
         html_out.append("</div>")
     
-    # 하단 기사 링크 섹션
     html_out.append("<div class='links-section'>")
     html_out.append("<p><b>기사 링크 :</b></p>")
     for i, r in enumerate(results, 1):
-        # 링크를 번호와 함께 <a> 태그로 추가
         html_out.append(f"<p>{i}) <a href='{r['link']}' target='_blank'>{r['link']}</a></p>")
     html_out.append("</div>")
     
     html_out.append("</body></html>")
     final_html_output = "\n".join(html_out)
 
-    # --- (유지) 이메일 발송 ---
     send_email_report(final_html_output, subject_line)
-    
-    # (삭제됨) 카카오톡 메시지 전송 코드 없음
 
 if __name__ == "__main__":
-
     main()
-
